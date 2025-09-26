@@ -1,81 +1,112 @@
 <!doctype html>
 <html lang="fr">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Minuteur simple</title>
-  <style>
-    body{font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#f6f7fb;color:#0b1220}
-    .timer{background:#fff;padding:30px 40px;border-radius:16px;box-shadow:0 8px 30px rgba(10,20,40,0.1);text-align:center}
-    h1{margin-bottom:20px}
-    .inputs{display:flex;gap:10px;justify-content:center;margin-bottom:20px}
-    input{width:70px;padding:10px;border-radius:8px;border:1px solid #ccc;text-align:center;font-size:1.2rem}
-    button{margin:5px;padding:10px 20px;border:0;border-radius:8px;cursor:pointer;font-weight:600}
-    button.start{background:#2b6ef6;color:#fff}
-    button.reset{background:#e6eefc;color:#0b1220}
-    .display{font-size:2.5rem;font-weight:700;margin-top:15px}
-  </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Minuteur Global</title>
+<style>
+  body { font-family:sans-serif; display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; background:#f6f7fb; color:#0b1220; }
+  .timer { background:#fff; padding:30px 40px; border-radius:16px; box-shadow:0 8px 30px rgba(10,20,40,0.1); text-align:center; }
+  h1 { margin-bottom:20px; }
+  .inputs { display:flex; gap:10px; justify-content:center; margin-bottom:20px; }
+  input { width:70px; padding:10px; border-radius:8px; border:1px solid #ccc; text-align:center; font-size:1.2rem; }
+  button { margin:5px; padding:10px 20px; border:0; border-radius:8px; cursor:pointer; font-weight:600; }
+  button.start { background:#2b6ef6; color:#fff; }
+  button.reset { background:#e6eefc; color:#0b1220; }
+  .display { font-size:2.5rem; font-weight:700; margin-top:15px; }
+</style>
 </head>
 <body>
-  <div class="timer">
-    <h1>Minuteur</h1>
-    <div class="inputs">
-      <input id="hours" type="number" min="0" placeholder="hh">
-      <input id="minutes" type="number" min="0" max="59" placeholder="mm">
-      <input id="seconds" type="number" min="0" max="59" placeholder="ss">
-    </div>
-    <div>
-      <button class="start" id="startBtn">Démarrer</button>
-      <button class="reset" id="resetBtn">Réinitialiser</button>
-    </div>
-    <div class="display" id="display">00:00:00</div>
+
+<div class="timer">
+  <h1>Minuteur Global</h1>
+  <div class="inputs">
+    <input id="hours" type="number" min="0" placeholder="hh">
+    <input id="minutes" type="number" min="0" max="59" placeholder="mm">
+    <input id="seconds" type="number" min="0" max="59" placeholder="ss">
   </div>
+  <div>
+    <button class="start" id="startBtn">Démarrer</button>
+    <button class="reset" id="resetBtn">Réinitialiser</button>
+  </div>
+  <div class="display" id="display">00:00:00</div>
+</div>
 
-  <script>
-    let interval = null;
-    let remaining = 0;
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
 
-    function format(t){
-      const h = String(Math.floor(t/3600)).padStart(2,'0');
-      const m = String(Math.floor((t%3600)/60)).padStart(2,'0');
-      const s = String(t%60).padStart(2,'0');
-      return `${h}:${m}:${s}`;
-    }
+<script>
+// 🔹 Config Firebase (remplace par la tienne)
+const firebaseConfig = {
+  apiKey: "API_KEY",
+  authDomain: "PROJECT_ID.firebaseapp.com",
+  databaseURL: "https://PROJECT_ID-default-rtdb.firebaseio.com",
+  projectId: "PROJECT_ID",
+  storageBucket: "PROJECT_ID.appspot.com",
+  messagingSenderId: "SENDER_ID",
+  appId: "APP_ID"
+};
 
-    function updateDisplay(){
-      document.getElementById('display').textContent = format(remaining);
-    }
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+const timerRef = db.ref('global_timer');
 
-    document.getElementById('startBtn').addEventListener('click', ()=>{
-      if(interval) return;
-      const h = parseInt(document.getElementById('hours').value||'0',10);
-      const m = parseInt(document.getElementById('minutes').value||'0',10);
-      const s = parseInt(document.getElementById('seconds').value||'0',10);
-      remaining = h*3600 + m*60 + s;
-      updateDisplay();
-      interval = setInterval(()=>{
-        remaining--;
-        if(remaining <= 0){
-          remaining = 0;
-          clearInterval(interval);
-          interval = null;
-          alert('Minuteur terminé !');
-        }
-        updateDisplay();
-      },1000);
-    });
+let interval = null;
+let remaining = 0;
 
-    document.getElementById('resetBtn').addEventListener('click', ()=>{
-      clearInterval(interval);
-      interval = null;
-      remaining = 0;
-      updateDisplay();
-      document.getElementById('hours').value = '';
-      document.getElementById('minutes').value = '';
-      document.getElementById('seconds').value = '';
-    });
+// formatage hh:mm:ss
+function format(t){
+  const h = String(Math.floor(t/3600)).padStart(2,'0');
+  const m = String(Math.floor((t%3600)/60)).padStart(2,'0');
+  const s = String(t%60).padStart(2,'0');
+  return `${h}:${m}:${s}`;
+}
 
+// mise à jour du display
+function updateDisplay(){ document.getElementById('display').textContent = format(remaining); }
+
+// démarre le minuteur local
+function startCountdown(endTimestamp){
+  clearInterval(interval);
+  interval = setInterval(()=>{
+    remaining = Math.max(0, Math.floor((endTimestamp - Date.now())/1000));
     updateDisplay();
-  </script>
+    if(remaining <= 0){ clearInterval(interval); interval=null; alert('Minuteur terminé !'); }
+  },1000);
+}
+
+// écoute Firebase pour synchronisation
+timerRef.on('value', snapshot=>{
+  const data = snapshot.val();
+  if(data && data.endTimestamp){
+    startCountdown(data.endTimestamp);
+  }
+});
+
+// bouton démarrer
+document.getElementById('startBtn').addEventListener('click', ()=>{
+  const h = parseInt(document.getElementById('hours').value||'0',10);
+  const m = parseInt(document.getElementById('minutes').value||'0',10);
+  const s = parseInt(document.getElementById('seconds').value||'0',10);
+  remaining = h*3600 + m*60 + s;
+  const endTimestamp = Date.now() + remaining*1000;
+  timerRef.set({ endTimestamp }); // sauvegarde globale
+  startCountdown(endTimestamp);
+});
+
+// bouton réinitialiser
+document.getElementById('resetBtn').addEventListener('click', ()=>{
+  timerRef.remove();
+  clearInterval(interval);
+  interval=null;
+  remaining=0;
+  updateDisplay();
+  document.getElementById('hours').value='';
+  document.getElementById('minutes').value='';
+  document.getElementById('seconds').value='';
+});
+</script>
+
 </body>
 </html>
