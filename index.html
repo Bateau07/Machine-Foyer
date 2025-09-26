@@ -3,128 +3,215 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Machines & Sèche-linges - Foyer Jean Bosco</title>
+  <title>Minuteur persistant (visible sur toutes les pages)</title>
   <style>
-    :root{font-family:Inter, system-ui, -apple-system, 'Segoe UI', Roboto, Arial; color:#111}
-    body{padding:20px; background:#f2f4f8}
-    .grid{display:flex;gap:12px;flex-wrap:wrap}
-    .machine{background:#fff;padding:10px 12px;border-radius:8px;box-shadow:0 2px 8px rgba(12,20,30,0.08);width:240px}
-    .title{font-size:16px;margin:0 0 4px}
-    .time{font-family:monospace;font-size:22px;margin-bottom:6px}
-    .controls{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
-    input[type=number]{width:60px;padding:4px;border-radius:6px;border:1px solid #ccc}
-    button{padding:6px 8px;border-radius:6px;border:0;background:#0366d6;color:white;cursor:pointer;font-size:14px}
-    button.ghost{background:#e6eefb;color:#0366d6}
-    small{color:#666}
+    :root{font-family:system-ui,-apple-system,Segoe UI,Roboto,'Helvetica Neue',Arial}
+    body{margin:0;padding:20px;background:#f6f7fb;color:#0b1220}
+    .card{max-width:760px;margin:0 auto;background:white;border-radius:12px;padding:18px;box-shadow:0 8px 30px rgba(10,20,40,0.08)}
+    label{display:block;margin-top:12px;font-weight:600}
+    input,select{padding:8px 10px;border-radius:8px;border:1px solid #d7dcef;width:100%;box-sizing:border-box}
+    .row{display:flex;gap:12px}
+    .row > *{flex:1}
+    button{margin-top:12px;padding:10px 14px;border-radius:10px;border:0;background:#2b6ef6;color:white;font-weight:700;cursor:pointer}
+    button.secondary{background:#e6eefc;color:#0b1220}
+    .muted{color:#6b7280;font-size:0.95rem}
+    .floating-timer{position:fixed;right:18px;top:18px;background:#0b1220;color:white;padding:10px 14px;border-radius:999px;box-shadow:0 8px 30px rgba(11,18,32,0.25);font-weight:700;z-index:99999}
+    .small{font-size:0.9rem}
   </style>
 </head>
 <body>
-  <h1>Machines à laver & Sèche-linges</h1>
-  <main class="grid" id="grid"></main>
+  <div class="card">
+    <h1>Minuteur persistant — visible sur toutes les pages</h1>
+    <p class="muted">Choisis la date/heure de début et la durée. Le minuteur est enregistré dans <code>localStorage</code> et synchronisé entre onglets/tabs grâce à <code>BroadcastChannel</code> (ou à l'événement <code>storage</code> en fallback).</p>
 
-  <!-- Firebase -->
-  <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
-    import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
+    <label>Début (date et heure)</label>
+    <input id="startInput" type="datetime-local" />
 
-    // ⚠️ Mets tes propres clés Firebase
-    const firebaseConfig = {
-      apiKey: "TA_CLE_API",
-      authDomain: "TON_PROJET.firebaseapp.com",
-      databaseURL: "https://TON_PROJET.firebaseio.com",
-      projectId: "TON_PROJET",
-      storageBucket: "TON_PROJET.appspot.com",
-      messagingSenderId: "ID_MSG",
-      appId: "TON_APP_ID"
-    };
+    <label>Durée</label>
+    <div class="row">
+      <input id="hours" type="number" min="0" placeholder="heures" />
+      <input id="minutes" type="number" min="0" max="59" placeholder="minutes" />
+      <input id="seconds" type="number" min="0" max="59" placeholder="secondes" />
+    </div>
 
-    const app = initializeApp(firebaseConfig);
-    const db = getDatabase(app);
+    <div style="display:flex;gap:10px;margin-top:12px">
+      <button id="saveBtn">Enregistrer & démarrer</button>
+      <button id="clearBtn" class="secondary">Supprimer / Arrêter</button>
+      <button id="pauseBtn" class="secondary">Pause/Resume</button>
+    </div>
 
-    // utilitaires
-    function pad(n){ return String(n).padStart(2,'0'); }
-    function formatHMS(totalSeconds){
-      if (totalSeconds < 0) totalSeconds = 0;
-      const h = Math.floor(totalSeconds / 3600);
-      const m = Math.floor((totalSeconds % 3600) / 60);
-      const s = Math.floor(totalSeconds % 60);
-      return pad(h)+':'+pad(m)+':'+pad(s);
-    }
+    <p class="muted small">Astuce : inclure ce script sur toutes les pages de ton site (ou ouvrir cette page dans plusieurs onglets) permet de voir le même minuteur actif partout.</p>
 
-    function createMachine(id,label,container){
-      const root=document.createElement('div'); root.className='machine';
-      const title=document.createElement('h3'); title.className='title'; title.textContent=label;
-      const timeEl=document.createElement('div'); timeEl.className='time'; timeEl.textContent='00:00:00';
+    <hr style="margin:18px 0" />
+    <div>
+      <strong>État actuel :</strong>
+      <div id="status" class="muted">—</div>
+    </div>
+  </div>
 
-      const controls=document.createElement('div'); controls.className='controls';
-      const hInput=document.createElement('input'); hInput.type='number'; hInput.min='0'; hInput.placeholder='h';
-      const mInput=document.createElement('input'); mInput.type='number'; mInput.min='0'; mInput.placeholder='min';
+  <!-- Minuteur flottant : sera visible sur toutes les pages qui incluent ce fichier/script -->
+  <div id="floating" class="floating-timer" aria-live="polite" style="display:none"></div>
 
-      const startBtn=document.createElement('button'); startBtn.textContent='Démarrer';
-      const stopBtn=document.createElement('button'); stopBtn.textContent='Pause'; stopBtn.className='ghost';
-      const resetBtn=document.createElement('button'); resetBtn.textContent='Reset'; resetBtn.className='ghost';
+  <script>
+    (function(){
+      // clé dans localStorage
+      const KEY = 'global_timer_v1';
+      let state = null; // {startISO, durationSec, running, pausedAt, pausedRemaining}
+      let tickInterval = null;
 
-      const status=document.createElement('div'); status.style.marginTop='6px'; status.innerHTML='<small>État: <span class="st">stopped</span></small>';
+      // communication entre onglets
+      const bcSupported = typeof BroadcastChannel === 'function';
+      const bc = bcSupported ? new BroadcastChannel('global-timer-channel') : null;
 
-      controls.append(hInput,mInput,startBtn,stopBtn,resetBtn);
-      root.append(title,timeEl,controls,status);
-      container.appendChild(root);
+      function nowMs(){ return Date.now(); }
 
-      let saved={durationSeconds:0,endTimestamp:null,status:'stopped'};
-      const machineRef=ref(db,'machines/'+id);
-
-      function persist(){ set(machineRef,saved); }
-
-      function updateUI(){
-        const now=Date.now();
-        let remaining=0;
-        if(saved.endTimestamp) remaining=Math.ceil((saved.endTimestamp-now)/1000);
-        else remaining=saved.durationSeconds;
-        if(remaining<=0 && saved.endTimestamp){
-          saved.status='finished'; saved.endTimestamp=null; saved.durationSeconds=0; persist();
-        }
-        timeEl.textContent=formatHMS(remaining);
-        root.querySelector('.st').textContent=saved.status;
-        stopBtn.disabled=(saved.status!=='running');
-        startBtn.disabled=(saved.status==='running');
+      function loadState(){
+        const raw = localStorage.getItem(KEY);
+        try{ state = raw ? JSON.parse(raw) : null; }catch(e){ state = null; }
       }
 
-      // boutons
-      startBtn.addEventListener('click',()=>{
-        if(saved.status==='running') return;
-        const hours=Math.max(0,parseInt(hInput.value)||0);
-        const mins=Math.max(0,parseInt(mInput.value)||0);
-        saved.durationSeconds=hours*3600+mins*60;
-        if(saved.durationSeconds<=0) return;
-        saved.endTimestamp=Date.now()+saved.durationSeconds*1000;
-        saved.status='running'; persist();
+      function saveState(){
+        if(state) localStorage.setItem(KEY, JSON.stringify(state));
+        else localStorage.removeItem(KEY);
+        sync('state-updated');
+      }
+
+      function sync(type){
+        if(bc) bc.postMessage({type, state});
+        // storage event will also fire on other tabs because we wrote to localStorage
+      }
+
+      function clearState(){ state = null; saveState(); updateUI(); }
+
+      function setStateFromInputs(){
+        const startInput = document.getElementById('startInput').value;
+        const h = parseInt(document.getElementById('hours').value||'0',10);
+        const m = parseInt(document.getElementById('minutes').value||'0',10);
+        const s = parseInt(document.getElementById('seconds').value||'0',10);
+        const durationSec = ((h*60)+m)*60 + s;
+        if(!startInput){ alert('Choisis une date et heure de début.'); return false; }
+        const startISO = new Date(startInput).toISOString();
+        state = { startISO, durationSec, running: true, paused: false, createdAt: new Date().toISOString() };
+        saveState();
+        updateUI();
+        return true;
+      }
+
+      function formatTime(ms){
+        if(ms < 0) ms = 0;
+        const total = Math.floor(ms/1000);
+        const h = Math.floor(total/3600); const m = Math.floor((total%3600)/60); const s = total%60;
+        return (h>0?String(h).padStart(2,'0')+':':'') + String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');
+      }
+
+      function updateDisplay(){
+        const floating = document.getElementById('floating');
+        const status = document.getElementById('status');
+        if(!state || !state.running){ floating.style.display='none'; status.textContent = 'Aucun minuteur actif.'; return; }
+
+        floating.style.display='inline-block';
+        const start = new Date(state.startISO).getTime();
+        const durationMs = (state.durationSec||0)*1000;
+        const now = nowMs();
+
+        if(state.paused){
+          const remMs = state.pausedRemaining != null ? state.pausedRemaining : Math.max(0, (start + durationMs) - now);
+          floating.textContent = 'En pause — ' + formatTime(remMs);
+          status.textContent = 'Minuteur en pause — reste ' + formatTime(remMs);
+          return;
+        }
+
+        if(now < start){
+          // avant le démarrage
+          const untilStart = start - now;
+          floating.textContent = 'Démarre dans ' + formatTime(untilStart);
+          status.textContent = 'Démarrera le ' + new Date(start).toLocaleString();
+          return;
+        }
+
+        const end = start + durationMs;
+        if(now >= end){
+          floating.textContent = 'Terminé';
+          status.textContent = 'Le minuteur est terminé.';
+          return;
+        }
+
+        const remaining = end - now;
+        floating.textContent = formatTime(remaining);
+        status.textContent = 'Minuteur actif — reste ' + formatTime(remaining);
+      }
+
+      function startTicker(){
+        if(tickInterval) return;
+        tickInterval = setInterval(updateDisplay, 250);
+        updateDisplay();
+      }
+      function stopTicker(){ clearInterval(tickInterval); tickInterval = null; }
+
+      // Pause / resume
+      function togglePause(){
+        if(!state) return;
+        if(!state.paused){
+          // compute remaining and store
+          const now = nowMs();
+          const start = new Date(state.startISO).getTime();
+          const durationMs = (state.durationSec||0)*1000;
+          let remaining = (start + durationMs) - now;
+          if(remaining < 0) remaining = 0;
+          state.paused = true; state.pausedRemaining = remaining; saveState();
+        } else {
+          // resume: set startISO such that remaining matches
+          const newStart = nowMs() - ((state.durationSec||0)*1000 - (state.pausedRemaining||0));
+          // compute new startISO so that end = now + pausedRemaining
+          const end = nowMs() + (state.pausedRemaining||0);
+          const newStartISO = new Date(end - (state.durationSec||0)*1000).toISOString();
+          state.startISO = newStartISO; state.paused = false; state.pausedRemaining = null; saveState();
+        }
+      }
+
+      // hookup UI
+      document.getElementById('saveBtn').addEventListener('click', ()=>{ if(setStateFromInputs()) startTicker(); });
+      document.getElementById('clearBtn').addEventListener('click', ()=>{ if(confirm('Supprimer le minuteur actif partout ?')){ clearState(); } });
+      document.getElementById('pauseBtn').addEventListener('click', ()=>{ togglePause(); updateUI(); });
+
+      // listen to BroadcastChannel
+      if(bc){ bc.onmessage = (ev)=>{ if(ev.data && ev.data.type === 'state-updated'){ loadState(); updateUI(); } }; }
+
+      // listen to storage (fallback & extra sync)
+      window.addEventListener('storage', (e)=>{ if(e.key === KEY){ loadState(); updateUI(); } });
+
+      function updateUI(){
+        loadState();
+        const startInput = document.getElementById('startInput');
+        if(state){
+          startInput.value = new Date(state.startISO).toISOString().slice(0,16);
+          const secs = state.durationSec || 0;
+          const h = Math.floor(secs/3600); const m = Math.floor((secs%3600)/60); const s = secs%60;
+          document.getElementById('hours').value = h;
+          document.getElementById('minutes').value = m;
+          document.getElementById('seconds').value = s;
+        }
+        updateDisplay();
+      }
+
+      // initial load
+      loadState();
+      startTicker();
+      updateUI();
+
+      // expose helper for embedding: window.GlobalTimer
+      window.GlobalTimer = {
+        getState(){ loadState(); return state; },
+        setState(obj){ state = obj; saveState(); },
+        clear(){ clearState(); }
+      };
+
+      // Accessibility: allow clicking floating to open control page in a new tab
+      document.getElementById('floating').addEventListener('click', ()=>{
+        window.open(window.location.href, '_self');
       });
 
-      stopBtn.addEventListener('click',()=>{
-        if(saved.status!=='running') return;
-        const rem=Math.max(0,Math.ceil((saved.endTimestamp-Date.now())/1000));
-        saved.durationSeconds=rem; saved.endTimestamp=null; saved.status='stopped'; persist();
-      });
-
-      resetBtn.addEventListener('click',()=>{
-        saved.durationSeconds=0; saved.endTimestamp=null; saved.status='stopped'; persist();
-      });
-
-      // sync Firebase
-      onValue(machineRef,(snap)=>{
-        if(snap.exists()){ saved=snap.val(); updateUI(); }
-      });
-
-      setInterval(updateUI,1000);
-    }
-
-    const grid=document.getElementById('grid');
-    createMachine(1,'Machine à laver 1',grid);
-    createMachine(2,'Machine à laver 2',grid);
-    createMachine(3,'Machine à laver 3',grid);
-    createMachine(4,'Sèche-linge 1',grid);
-    createMachine(5,'Sèche-linge 2',grid);
-    createMachine(6,'Sèche-linge 3',grid);
+    })();
   </script>
 </body>
 </html>
