@@ -1,117 +1,132 @@
 <!doctype html>
 <html lang="fr">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Minuteur Global</title>
-<style>
-  body { font-family:sans-serif; display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; background:#f6f7fb; color:#0b1220; }
-  .timer { background:#fff; padding:30px 40px; border-radius:16px; box-shadow:0 8px 30px rgba(10,20,40,0.1); text-align:center; }
-  h1 { margin-bottom:20px; }
-  .inputs { display:flex; gap:10px; justify-content:center; margin-bottom:20px; }
-  input { width:70px; padding:10px; border-radius:8px; border:1px solid #ccc; text-align:center; font-size:1.2rem; }
-  button { margin:5px; padding:10px 20px; border:0; border-radius:8px; cursor:pointer; font-weight:600; }
-  button.start { background:#2b6ef6; color:#fff; }
-  button.reset { background:#e6eefc; color:#0b1220; }
-  .display { font-size:2.5rem; font-weight:700; margin-top:15px; }
-</style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>3 Machines à laver - Minuteurs partagés</title>
+  <style>
+    :root{font-family:Inter, system-ui, -apple-system, 'Segoe UI', Roboto, Arial; color:#111}
+    body{padding:20px; background:#f2f4f8}
+    .grid{display:flex;gap:12px;flex-wrap:wrap}
+    .machine{background:#fff;padding:10px 12px;border-radius:8px;box-shadow:0 2px 8px rgba(12,20,30,0.08);width:240px}
+    .title{font-size:16px;margin:0 0 4px}
+    .time{font-family:monospace;font-size:22px;margin-bottom:6px}
+    .controls{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+    input[type=number]{width:60px;padding:4px;border-radius:6px;border:1px solid #ccc}
+    button{padding:6px 8px;border-radius:6px;border:0;background:#0366d6;color:white;cursor:pointer;font-size:14px}
+    button.ghost{background:#e6eefb;color:#0366d6}
+    small{color:#666}
+  </style>
 </head>
 <body>
+  <h1>Gestion 3 machines à laver (partagé)</h1>
+  <main class="grid" id="grid"></main>
 
-<div class="timer">
-  <h1>Minuteur Global</h1>
-  <div class="inputs">
-    <input id="hours" type="number" min="0" placeholder="hh">
-    <input id="minutes" type="number" min="0" max="59" placeholder="mm">
-    <input id="seconds" type="number" min="0" max="59" placeholder="ss">
-  </div>
-  <div>
-    <button class="start" id="startBtn">Démarrer</button>
-    <button class="reset" id="resetBtn">Réinitialiser</button>
-  </div>
-  <div class="display" id="display">00:00:00</div>
-</div>
+  <!-- SDK Firebase -->
+  <script type="module">
+    // === Import Firebase ===
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
+    import { getDatabase, ref, set, get, onValue } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
 
-<!-- Firebase SDK -->
-<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+    // === Configuration Firebase (à personnaliser avec tes clés !) ===
+    const firebaseConfig = {
+      apiKey: "TA_CLE_API",
+      authDomain: "TON_PROJET.firebaseapp.com",
+      databaseURL: "https://TON_PROJET.firebaseio.com",
+      projectId: "TON_PROJET",
+      storageBucket: "TON_PROJET.appspot.com",
+      messagingSenderId: "ID_MSG",
+      appId: "TON_APP_ID"
+    };
 
-<script>
-// 🔹 Config Firebase (remplace par la tienne)
-const firebaseConfig = {
-  apiKey: "AIzaSyBrhRjCuYEUcYjbauxmCrsGXzOmq7RFHCo",
-  authDomain: "machine-foyer.firebaseapp.com",
-  databaseURL: "https://machine-foyer-default-rtdb.firebaseio.com",
-  projectId: "machine-foyer",
-  storageBucket: "machine-foyer.appspot.com",
-  messagingSenderId: "165765417349",
-  appId: "1:165765417349:web:61796201f1cef414a49cec"
-};
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
 
+    // === Utilitaires ===
+    function pad(n){ return String(n).padStart(2,'0'); }
+    function formatHMS(totalSeconds){
+      if (totalSeconds < 0) totalSeconds = 0;
+      const h = Math.floor(totalSeconds / 3600);
+      const m = Math.floor((totalSeconds % 3600) / 60);
+      const s = Math.floor(totalSeconds % 60);
+      return pad(h)+':'+pad(m)+':'+pad(s);
+    }
 
+    function createMachine(id,label,container){
+      const root=document.createElement('div'); root.className='machine';
+      const title=document.createElement('h3'); title.className='title'; title.textContent=label;
+      const timeEl=document.createElement('div'); timeEl.className='time'; timeEl.textContent='00:00:00';
 
-firebase.initializeApp(firebaseConfig);
-const db = firebase.database();
-const timerRef = db.ref('global_timer');
+      const controls=document.createElement('div'); controls.className='controls';
+      const hInput=document.createElement('input'); hInput.type='number'; hInput.min='0'; hInput.placeholder='h';
+      const mInput=document.createElement('input'); mInput.type='number'; mInput.min='0'; mInput.placeholder='min';
 
-let interval = null;
-let remaining = 0;
+      const startBtn=document.createElement('button'); startBtn.textContent='Démarrer';
+      const stopBtn=document.createElement('button'); stopBtn.textContent='Pause'; stopBtn.className='ghost';
+      const resetBtn=document.createElement('button'); resetBtn.textContent='Reset'; resetBtn.className='ghost';
 
-// formatage hh:mm:ss
-function format(t){
-  const h = String(Math.floor(t/3600)).padStart(2,'0');
-  const m = String(Math.floor((t%3600)/60)).padStart(2,'0');
-  const s = String(t%60).padStart(2,'0');
-  return `${h}:${m}:${s}`;
-}
+      const status=document.createElement('div'); status.style.marginTop='6px'; status.innerHTML='<small>État: <span class="st">stopped</span></small>';
 
-// mise à jour du display
-function updateDisplay(){ document.getElementById('display').textContent = format(remaining); }
+      controls.append(hInput,mInput,startBtn,stopBtn,resetBtn);
+      root.append(title,timeEl,controls,status);
+      container.appendChild(root);
 
-// démarre le minuteur local
-function startCountdown(endTimestamp){
-  clearInterval(interval);
-  interval = setInterval(()=>{
-    remaining = Math.max(0, Math.floor((endTimestamp - Date.now())/1000));
-    updateDisplay();
-    if(remaining <= 0){ clearInterval(interval); interval=null; alert('Minuteur terminé !'); }
-  },1000);
-}
+      let saved={durationSeconds:0,endTimestamp:null,status:'stopped'};
 
-// écoute Firebase pour synchronisation
-timerRef.on('value', snapshot=>{
-  const data = snapshot.val();
-  if(data && data.endTimestamp){
-    startCountdown(data.endTimestamp);
-  }
-});
+      const machineRef=ref(db,'machines/'+id);
 
-// bouton démarrer
-document.getElementById('startBtn').addEventListener('click', ()=>{
-  const h = parseInt(document.getElementById('hours').value||'0',10);
-  const m = parseInt(document.getElementById('minutes').value||'0',10);
-  const s = parseInt(document.getElementById('seconds').value||'0',10);
-  remaining = h*3600 + m*60 + s;
-  const endTimestamp = Date.now() + remaining*1000;
-  timerRef.set({ endTimestamp }); // sauvegarde globale
-  startCountdown(endTimestamp);
-});
+      function persist(){ set(machineRef,saved); }
 
-// bouton réinitialiser
-document.getElementById('resetBtn').addEventListener('click', ()=>{
-  timerRef.remove();
-  clearInterval(interval);
-  interval=null;
-  remaining=0;
-  updateDisplay();
-  document.getElementById('hours').value='';
-  document.getElementById('minutes').value='';
-  document.getElementById('seconds').value='';
-});
-</script>
+      function updateUI(){
+        const now=Date.now();
+        let remaining=0;
+        if(saved.endTimestamp) remaining=Math.ceil((saved.endTimestamp-now)/1000);
+        else remaining=saved.durationSeconds;
+        if(remaining<=0 && saved.endTimestamp){
+          saved.status='finished'; saved.endTimestamp=null; saved.durationSeconds=0; persist();
+        }
+        timeEl.textContent=saved.status==='running'?formatHMS(remaining):formatHMS(saved.durationSeconds);
+        root.querySelector('.st').textContent=saved.status;
+        stopBtn.disabled=(saved.status!=='running');
+        startBtn.disabled=(saved.status==='running');
+      }
 
+      // === Boutons ===
+      startBtn.addEventListener('click',()=>{
+        if(saved.status==='running') return;
+        const hours=Math.max(0,parseInt(hInput.value)||0);
+        const mins=Math.max(0,parseInt(mInput.value)||0);
+        saved.durationSeconds=hours*3600+mins*60;
+        if(saved.durationSeconds<=0) return;
+        saved.endTimestamp=Date.now()+saved.durationSeconds*1000;
+        saved.status='running'; persist();
+      });
+
+      stopBtn.addEventListener('click',()=>{
+        if(saved.status!=='running') return;
+        const rem=Math.max(0,Math.ceil((saved.endTimestamp-Date.now())/1000));
+        saved.durationSeconds=rem; saved.endTimestamp=null; saved.status='stopped'; persist();
+      });
+
+      resetBtn.addEventListener('click',()=>{
+        saved.durationSeconds=0; saved.endTimestamp=null; saved.status='stopped'; persist();
+      });
+
+      // === Sync en temps réel depuis Firebase ===
+      onValue(machineRef,(snap)=>{
+        if(snap.exists()){
+          saved=snap.val();
+          updateUI();
+        }
+      });
+
+      setInterval(updateUI,1000);
+    }
+
+    const grid=document.getElementById('grid');
+    createMachine(1,'Machine à laver 1',grid);
+    createMachine(2,'Machine à laver 2',grid);
+    createMachine(3,'Machine à laver 3',grid);
+  </script>
 </body>
 </html>
-
-
-
