@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>3 Machines à laver - Minuteurs partagés</title>
+  <title>3 Machines à laver - Minuteurs locaux</title>
   <style>
     :root{font-family:Inter, system-ui, -apple-system, 'Segoe UI', Roboto, Arial; color:#111}
     body{padding:20px; background:#f2f4f8}
@@ -19,30 +19,10 @@
   </style>
 </head>
 <body>
-  <h1>Gestion 3 machines à laver (partagé)</h1>
+  <h1>Gestion 3 machines à laver</h1>
   <main class="grid" id="grid"></main>
 
-  <!-- SDK Firebase -->
-  <script type="module">
-    // === Import Firebase ===
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
-    import { getDatabase, ref, set, get, onValue } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
-
-    // === Configuration Firebase (à personnaliser avec tes clés !) ===
-    const firebaseConfig = {
-      apiKey: "TA_CLE_API",
-      authDomain: "TON_PROJET.firebaseapp.com",
-      databaseURL: "https://TON_PROJET.firebaseio.com",
-      projectId: "TON_PROJET",
-      storageBucket: "TON_PROJET.appspot.com",
-      messagingSenderId: "ID_MSG",
-      appId: "TON_APP_ID"
-    };
-
-    const app = initializeApp(firebaseConfig);
-    const db = getDatabase(app);
-
-    // === Utilitaires ===
+  <script>
     function pad(n){ return String(n).padStart(2,'0'); }
     function formatHMS(totalSeconds){
       if (totalSeconds < 0) totalSeconds = 0;
@@ -51,6 +31,7 @@
       const s = Math.floor(totalSeconds % 60);
       return pad(h)+':'+pad(m)+':'+pad(s);
     }
+    function storageKey(id){ return 'washer-local-' + id; }
 
     function createMachine(id,label,container){
       const root=document.createElement('div'); root.className='machine';
@@ -72,10 +53,12 @@
       container.appendChild(root);
 
       let saved={durationSeconds:0,endTimestamp:null,status:'stopped'};
+      try{
+        const raw=localStorage.getItem(storageKey(id));
+        if(raw) saved=Object.assign(saved,JSON.parse(raw));
+      }catch(e){}
 
-      const machineRef=ref(db,'machines/'+id);
-
-      function persist(){ set(machineRef,saved); }
+      function persist(){ try{localStorage.setItem(storageKey(id),JSON.stringify(saved));}catch(e){} }
 
       function updateUI(){
         const now=Date.now();
@@ -91,7 +74,6 @@
         startBtn.disabled=(saved.status==='running');
       }
 
-      // === Boutons ===
       startBtn.addEventListener('click',()=>{
         if(saved.status==='running') return;
         const hours=Math.max(0,parseInt(hInput.value)||0);
@@ -99,28 +81,24 @@
         saved.durationSeconds=hours*3600+mins*60;
         if(saved.durationSeconds<=0) return;
         saved.endTimestamp=Date.now()+saved.durationSeconds*1000;
-        saved.status='running'; persist();
+        saved.status='running'; persist(); updateUI();
       });
 
       stopBtn.addEventListener('click',()=>{
         if(saved.status!=='running') return;
         const rem=Math.max(0,Math.ceil((saved.endTimestamp-Date.now())/1000));
-        saved.durationSeconds=rem; saved.endTimestamp=null; saved.status='stopped'; persist();
+        saved.durationSeconds=rem; saved.endTimestamp=null; saved.status='stopped'; persist(); updateUI();
       });
 
       resetBtn.addEventListener('click',()=>{
-        saved.durationSeconds=0; saved.endTimestamp=null; saved.status='stopped'; persist();
-      });
-
-      // === Sync en temps réel depuis Firebase ===
-      onValue(machineRef,(snap)=>{
-        if(snap.exists()){
-          saved=snap.val();
-          updateUI();
-        }
+        saved.durationSeconds=0; saved.endTimestamp=null; saved.status='stopped'; persist(); updateUI();
       });
 
       setInterval(updateUI,1000);
+      updateUI();
+      window.addEventListener('storage',(ev)=>{
+        if(ev.key===storageKey(id)){ try{saved=Object.assign(saved,JSON.parse(ev.newValue)); updateUI();}catch(e){} }
+      });
     }
 
     const grid=document.getElementById('grid');
