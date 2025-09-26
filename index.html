@@ -19,10 +19,29 @@
   </style>
 </head>
 <body>
-  
+  <h1>Machines à laver & Sèche-linges (Foyer Jean Bosco)</h1>
   <main class="grid" id="grid"></main>
 
-  <script>
+  <!-- Firebase -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
+    import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
+
+    // ⚠️ Mets tes propres clés Firebase ici
+    const firebaseConfig = {
+      apiKey: "TA_CLE_API",
+      authDomain: "TON_PROJET.firebaseapp.com",
+      databaseURL: "https://TON_PROJET.firebaseio.com",
+      projectId: "TON_PROJET",
+      storageBucket: "TON_PROJET.appspot.com",
+      messagingSenderId: "ID_MSG",
+      appId: "TON_APP_ID"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+
+    // === utilitaires ===
     function pad(n){ return String(n).padStart(2,'0'); }
     function formatHMS(totalSeconds){
       if (totalSeconds < 0) totalSeconds = 0;
@@ -31,7 +50,6 @@
       const s = Math.floor(totalSeconds % 60);
       return pad(h)+':'+pad(m)+':'+pad(s);
     }
-    function storageKey(id){ return 'washer-local-' + id; }
 
     function createMachine(id,label,container){
       const root=document.createElement('div'); root.className='machine';
@@ -53,12 +71,9 @@
       container.appendChild(root);
 
       let saved={durationSeconds:0,endTimestamp:null,status:'stopped'};
-      try{
-        const raw=localStorage.getItem(storageKey(id));
-        if(raw) saved=Object.assign(saved,JSON.parse(raw));
-      }catch(e){}
+      const machineRef=ref(db,'machines/'+id);
 
-      function persist(){ try{localStorage.setItem(storageKey(id),JSON.stringify(saved));}catch(e){} }
+      function persist(){ set(machineRef,saved); }
 
       function updateUI(){
         const now=Date.now();
@@ -74,6 +89,7 @@
         startBtn.disabled=(saved.status==='running');
       }
 
+      // === Boutons ===
       startBtn.addEventListener('click',()=>{
         if(saved.status==='running') return;
         const hours=Math.max(0,parseInt(hInput.value)||0);
@@ -81,33 +97,34 @@
         saved.durationSeconds=hours*3600+mins*60;
         if(saved.durationSeconds<=0) return;
         saved.endTimestamp=Date.now()+saved.durationSeconds*1000;
-        saved.status='running'; persist(); updateUI();
+        saved.status='running'; persist();
       });
 
       stopBtn.addEventListener('click',()=>{
         if(saved.status!=='running') return;
         const rem=Math.max(0,Math.ceil((saved.endTimestamp-Date.now())/1000));
-        saved.durationSeconds=rem; saved.endTimestamp=null; saved.status='stopped'; persist(); updateUI();
+        saved.durationSeconds=rem; saved.endTimestamp=null; saved.status='stopped'; persist();
       });
 
       resetBtn.addEventListener('click',()=>{
-        saved.durationSeconds=0; saved.endTimestamp=null; saved.status='stopped'; persist(); updateUI();
+        saved.durationSeconds=0; saved.endTimestamp=null; saved.status='stopped'; persist();
+      });
+
+      // === sync temps réel Firebase ===
+      onValue(machineRef,(snap)=>{
+        if(snap.exists()){ saved=snap.val(); updateUI(); }
       });
 
       setInterval(updateUI,1000);
-      updateUI();
-      window.addEventListener('storage',(ev)=>{
-        if(ev.key===storageKey(id)){ try{saved=Object.assign(saved,JSON.parse(ev.newValue)); updateUI();}catch(e){} }
-      });
     }
 
     const grid=document.getElementById('grid');
     createMachine(1,'Machine à laver 1',grid);
     createMachine(2,'Machine à laver 2',grid);
     createMachine(3,'Machine à laver 3',grid);
-    createMachine(4,'Seche linge 1',grid);
-    createMachine(5,'Seche linge 2',grid);
-    createMachine(6,'Seche linge 3',grid);
+    createMachine(4,'Sèche-linge 1',grid);
+    createMachine(5,'Sèche-linge 2',grid);
+    createMachine(6,'Sèche-linge 3',grid);
   </script>
 </body>
 </html>
