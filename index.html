@@ -3,215 +3,79 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Minuteur persistant (visible sur toutes les pages)</title>
+  <title>Minuteur simple</title>
   <style>
-    :root{font-family:system-ui,-apple-system,Segoe UI,Roboto,'Helvetica Neue',Arial}
-    body{margin:0;padding:20px;background:#f6f7fb;color:#0b1220}
-    .card{max-width:760px;margin:0 auto;background:white;border-radius:12px;padding:18px;box-shadow:0 8px 30px rgba(10,20,40,0.08)}
-    label{display:block;margin-top:12px;font-weight:600}
-    input,select{padding:8px 10px;border-radius:8px;border:1px solid #d7dcef;width:100%;box-sizing:border-box}
-    .row{display:flex;gap:12px}
-    .row > *{flex:1}
-    button{margin-top:12px;padding:10px 14px;border-radius:10px;border:0;background:#2b6ef6;color:white;font-weight:700;cursor:pointer}
-    button.secondary{background:#e6eefc;color:#0b1220}
-    .muted{color:#6b7280;font-size:0.95rem}
-    .floating-timer{position:fixed;right:18px;top:18px;background:#0b1220;color:white;padding:10px 14px;border-radius:999px;box-shadow:0 8px 30px rgba(11,18,32,0.25);font-weight:700;z-index:99999}
-    .small{font-size:0.9rem}
+    body{font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#f6f7fb;color:#0b1220}
+    .timer{background:#fff;padding:30px 40px;border-radius:16px;box-shadow:0 8px 30px rgba(10,20,40,0.1);text-align:center}
+    h1{margin-bottom:20px}
+    .inputs{display:flex;gap:10px;justify-content:center;margin-bottom:20px}
+    input{width:70px;padding:10px;border-radius:8px;border:1px solid #ccc;text-align:center;font-size:1.2rem}
+    button{margin:5px;padding:10px 20px;border:0;border-radius:8px;cursor:pointer;font-weight:600}
+    button.start{background:#2b6ef6;color:#fff}
+    button.reset{background:#e6eefc;color:#0b1220}
+    .display{font-size:2.5rem;font-weight:700;margin-top:15px}
   </style>
 </head>
 <body>
-  <div class="card">
-    <h1>Minuteur persistant — visible sur toutes les pages</h1>
-    <p class="muted">Choisis la date/heure de début et la durée. Le minuteur est enregistré dans <code>localStorage</code> et synchronisé entre onglets/tabs grâce à <code>BroadcastChannel</code> (ou à l'événement <code>storage</code> en fallback).</p>
-
-    <label>Début (date et heure)</label>
-    <input id="startInput" type="datetime-local" />
-
-    <label>Durée</label>
-    <div class="row">
-      <input id="hours" type="number" min="0" placeholder="heures" />
-      <input id="minutes" type="number" min="0" max="59" placeholder="minutes" />
-      <input id="seconds" type="number" min="0" max="59" placeholder="secondes" />
+  <div class="timer">
+    <h1>Minuteur</h1>
+    <div class="inputs">
+      <input id="hours" type="number" min="0" placeholder="hh">
+      <input id="minutes" type="number" min="0" max="59" placeholder="mm">
+      <input id="seconds" type="number" min="0" max="59" placeholder="ss">
     </div>
-
-    <div style="display:flex;gap:10px;margin-top:12px">
-      <button id="saveBtn">Enregistrer & démarrer</button>
-      <button id="clearBtn" class="secondary">Supprimer / Arrêter</button>
-      <button id="pauseBtn" class="secondary">Pause/Resume</button>
-    </div>
-
-    <p class="muted small">Astuce : inclure ce script sur toutes les pages de ton site (ou ouvrir cette page dans plusieurs onglets) permet de voir le même minuteur actif partout.</p>
-
-    <hr style="margin:18px 0" />
     <div>
-      <strong>État actuel :</strong>
-      <div id="status" class="muted">—</div>
+      <button class="start" id="startBtn">Démarrer</button>
+      <button class="reset" id="resetBtn">Réinitialiser</button>
     </div>
+    <div class="display" id="display">00:00:00</div>
   </div>
 
-  <!-- Minuteur flottant : sera visible sur toutes les pages qui incluent ce fichier/script -->
-  <div id="floating" class="floating-timer" aria-live="polite" style="display:none"></div>
-
   <script>
-    (function(){
-      // clé dans localStorage
-      const KEY = 'global_timer_v1';
-      let state = null; // {startISO, durationSec, running, pausedAt, pausedRemaining}
-      let tickInterval = null;
+    let interval = null;
+    let remaining = 0;
 
-      // communication entre onglets
-      const bcSupported = typeof BroadcastChannel === 'function';
-      const bc = bcSupported ? new BroadcastChannel('global-timer-channel') : null;
+    function format(t){
+      const h = String(Math.floor(t/3600)).padStart(2,'0');
+      const m = String(Math.floor((t%3600)/60)).padStart(2,'0');
+      const s = String(t%60).padStart(2,'0');
+      return `${h}:${m}:${s}`;
+    }
 
-      function nowMs(){ return Date.now(); }
+    function updateDisplay(){
+      document.getElementById('display').textContent = format(remaining);
+    }
 
-      function loadState(){
-        const raw = localStorage.getItem(KEY);
-        try{ state = raw ? JSON.parse(raw) : null; }catch(e){ state = null; }
-      }
-
-      function saveState(){
-        if(state) localStorage.setItem(KEY, JSON.stringify(state));
-        else localStorage.removeItem(KEY);
-        sync('state-updated');
-      }
-
-      function sync(type){
-        if(bc) bc.postMessage({type, state});
-        // storage event will also fire on other tabs because we wrote to localStorage
-      }
-
-      function clearState(){ state = null; saveState(); updateUI(); }
-
-      function setStateFromInputs(){
-        const startInput = document.getElementById('startInput').value;
-        const h = parseInt(document.getElementById('hours').value||'0',10);
-        const m = parseInt(document.getElementById('minutes').value||'0',10);
-        const s = parseInt(document.getElementById('seconds').value||'0',10);
-        const durationSec = ((h*60)+m)*60 + s;
-        if(!startInput){ alert('Choisis une date et heure de début.'); return false; }
-        const startISO = new Date(startInput).toISOString();
-        state = { startISO, durationSec, running: true, paused: false, createdAt: new Date().toISOString() };
-        saveState();
-        updateUI();
-        return true;
-      }
-
-      function formatTime(ms){
-        if(ms < 0) ms = 0;
-        const total = Math.floor(ms/1000);
-        const h = Math.floor(total/3600); const m = Math.floor((total%3600)/60); const s = total%60;
-        return (h>0?String(h).padStart(2,'0')+':':'') + String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');
-      }
-
-      function updateDisplay(){
-        const floating = document.getElementById('floating');
-        const status = document.getElementById('status');
-        if(!state || !state.running){ floating.style.display='none'; status.textContent = 'Aucun minuteur actif.'; return; }
-
-        floating.style.display='inline-block';
-        const start = new Date(state.startISO).getTime();
-        const durationMs = (state.durationSec||0)*1000;
-        const now = nowMs();
-
-        if(state.paused){
-          const remMs = state.pausedRemaining != null ? state.pausedRemaining : Math.max(0, (start + durationMs) - now);
-          floating.textContent = 'En pause — ' + formatTime(remMs);
-          status.textContent = 'Minuteur en pause — reste ' + formatTime(remMs);
-          return;
-        }
-
-        if(now < start){
-          // avant le démarrage
-          const untilStart = start - now;
-          floating.textContent = 'Démarre dans ' + formatTime(untilStart);
-          status.textContent = 'Démarrera le ' + new Date(start).toLocaleString();
-          return;
-        }
-
-        const end = start + durationMs;
-        if(now >= end){
-          floating.textContent = 'Terminé';
-          status.textContent = 'Le minuteur est terminé.';
-          return;
-        }
-
-        const remaining = end - now;
-        floating.textContent = formatTime(remaining);
-        status.textContent = 'Minuteur actif — reste ' + formatTime(remaining);
-      }
-
-      function startTicker(){
-        if(tickInterval) return;
-        tickInterval = setInterval(updateDisplay, 250);
-        updateDisplay();
-      }
-      function stopTicker(){ clearInterval(tickInterval); tickInterval = null; }
-
-      // Pause / resume
-      function togglePause(){
-        if(!state) return;
-        if(!state.paused){
-          // compute remaining and store
-          const now = nowMs();
-          const start = new Date(state.startISO).getTime();
-          const durationMs = (state.durationSec||0)*1000;
-          let remaining = (start + durationMs) - now;
-          if(remaining < 0) remaining = 0;
-          state.paused = true; state.pausedRemaining = remaining; saveState();
-        } else {
-          // resume: set startISO such that remaining matches
-          const newStart = nowMs() - ((state.durationSec||0)*1000 - (state.pausedRemaining||0));
-          // compute new startISO so that end = now + pausedRemaining
-          const end = nowMs() + (state.pausedRemaining||0);
-          const newStartISO = new Date(end - (state.durationSec||0)*1000).toISOString();
-          state.startISO = newStartISO; state.paused = false; state.pausedRemaining = null; saveState();
-        }
-      }
-
-      // hookup UI
-      document.getElementById('saveBtn').addEventListener('click', ()=>{ if(setStateFromInputs()) startTicker(); });
-      document.getElementById('clearBtn').addEventListener('click', ()=>{ if(confirm('Supprimer le minuteur actif partout ?')){ clearState(); } });
-      document.getElementById('pauseBtn').addEventListener('click', ()=>{ togglePause(); updateUI(); });
-
-      // listen to BroadcastChannel
-      if(bc){ bc.onmessage = (ev)=>{ if(ev.data && ev.data.type === 'state-updated'){ loadState(); updateUI(); } }; }
-
-      // listen to storage (fallback & extra sync)
-      window.addEventListener('storage', (e)=>{ if(e.key === KEY){ loadState(); updateUI(); } });
-
-      function updateUI(){
-        loadState();
-        const startInput = document.getElementById('startInput');
-        if(state){
-          startInput.value = new Date(state.startISO).toISOString().slice(0,16);
-          const secs = state.durationSec || 0;
-          const h = Math.floor(secs/3600); const m = Math.floor((secs%3600)/60); const s = secs%60;
-          document.getElementById('hours').value = h;
-          document.getElementById('minutes').value = m;
-          document.getElementById('seconds').value = s;
+    document.getElementById('startBtn').addEventListener('click', ()=>{
+      if(interval) return;
+      const h = parseInt(document.getElementById('hours').value||'0',10);
+      const m = parseInt(document.getElementById('minutes').value||'0',10);
+      const s = parseInt(document.getElementById('seconds').value||'0',10);
+      remaining = h*3600 + m*60 + s;
+      updateDisplay();
+      interval = setInterval(()=>{
+        remaining--;
+        if(remaining <= 0){
+          remaining = 0;
+          clearInterval(interval);
+          interval = null;
+          alert('Minuteur terminé !');
         }
         updateDisplay();
-      }
+      },1000);
+    });
 
-      // initial load
-      loadState();
-      startTicker();
-      updateUI();
+    document.getElementById('resetBtn').addEventListener('click', ()=>{
+      clearInterval(interval);
+      interval = null;
+      remaining = 0;
+      updateDisplay();
+      document.getElementById('hours').value = '';
+      document.getElementById('minutes').value = '';
+      document.getElementById('seconds').value = '';
+    });
 
-      // expose helper for embedding: window.GlobalTimer
-      window.GlobalTimer = {
-        getState(){ loadState(); return state; },
-        setState(obj){ state = obj; saveState(); },
-        clear(){ clearState(); }
-      };
-
-      // Accessibility: allow clicking floating to open control page in a new tab
-      document.getElementById('floating').addEventListener('click', ()=>{
-        window.open(window.location.href, '_self');
-      });
-
-    })();
+    updateDisplay();
   </script>
 </body>
 </html>
