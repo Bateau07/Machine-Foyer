@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Machines à laver Foyer Jean Bosco</title>
+  <title>Machines & Sèche-linges - Foyer Jean Bosco</title>
   <style>
     :root{font-family:Inter, system-ui, -apple-system, 'Segoe UI', Roboto, Arial; color:#111}
     body{padding:20px; background:#f2f4f8}
@@ -19,7 +19,7 @@
   </style>
 </head>
 <body>
-  <h1>Machines à laver & Sèche-linges (Foyer Jean Bosco)</h1>
+  <h1>Machines à laver & Sèche-linges</h1>
   <main class="grid" id="grid"></main>
 
   <!-- Firebase -->
@@ -27,7 +27,7 @@
     import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
     import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
 
-    // ⚠️ Mets tes propres clés Firebase ici
+    // ⚠️ Mets tes propres clés Firebase
     const firebaseConfig = {
       apiKey: "TA_CLE_API",
       authDomain: "TON_PROJET.firebaseapp.com",
@@ -41,7 +41,7 @@
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
 
-    // === utilitaires ===
+    // utilitaires
     function pad(n){ return String(n).padStart(2,'0'); }
     function formatHMS(totalSeconds){
       if (totalSeconds < 0) totalSeconds = 0;
@@ -83,13 +83,13 @@
         if(remaining<=0 && saved.endTimestamp){
           saved.status='finished'; saved.endTimestamp=null; saved.durationSeconds=0; persist();
         }
-        timeEl.textContent=saved.status==='running'?formatHMS(remaining):formatHMS(saved.durationSeconds);
+        timeEl.textContent=formatHMS(remaining);
         root.querySelector('.st').textContent=saved.status;
         stopBtn.disabled=(saved.status!=='running');
         startBtn.disabled=(saved.status==='running');
       }
 
-      // === Boutons ===
+      // boutons
       startBtn.addEventListener('click',()=>{
         if(saved.status==='running') return;
         const hours=Math.max(0,parseInt(hInput.value)||0);
@@ -110,7 +110,7 @@
         saved.durationSeconds=0; saved.endTimestamp=null; saved.status='stopped'; persist();
       });
 
-      // === sync temps réel Firebase ===
+      // sync Firebase
       onValue(machineRef,(snap)=>{
         if(snap.exists()){ saved=snap.val(); updateUI(); }
       });
