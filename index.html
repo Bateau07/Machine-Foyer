@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Machines à laver Foyer Jean Bosco</title>
+  <style>
+    :root{font-family:Inter, system-ui, -apple-system, 'Segoe UI', Roboto, Arial; color:#111}
+    body{padding:20px; background:#f2f4f8}
+    .grid{display:flex;gap:12px;flex-wrap:wrap}
+    .machine{background:#fff;padding:10px 12px;border-radius:8px;box-shadow:0 2px 8px rgba(12,20,30,0.08);width:240px}
+    .title{font-size:16px;margin:0 0 4px}
+    .time{font-family:monospace;font-size:22px;margin-bottom:6px}
+    .controls{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+    input[type=number]{width:60px;padding:4px;border-radius:6px;border:1px solid #ccc}
+    button{padding:6px 8px;border-radius:6px;border:0;background:#0366d6;color:white;cursor:pointer;font-size:14px}
+    button.ghost{background:#e6eefb;color:#0366d6}
+    small{color:#666}
+  </style>
+</head>
+<body>
+  
+  <main class="grid" id="grid"></main>
+
+  <script>
+    function pad(n){ return String(n).padStart(2,'0'); }
+    function formatHMS(totalSeconds){
+      if (totalSeconds < 0) totalSeconds = 0;
+      const h = Math.floor(totalSeconds / 3600);
+      const m = Math.floor((totalSeconds % 3600) / 60);
+      const s = Math.floor(totalSeconds % 60);
+      return pad(h)+':'+pad(m)+':'+pad(s);
+    }
+    function storageKey(id){ return 'washer-local-' + id; }
+
+    function createMachine(id,label,container){
+      const root=document.createElement('div'); root.className='machine';
+      const title=document.createElement('h3'); title.className='title'; title.textContent=label;
+      const timeEl=document.createElement('div'); timeEl.className='time'; timeEl.textContent='00:00:00';
+
+      const controls=document.createElement('div'); controls.className='controls';
+      const hInput=document.createElement('input'); hInput.type='number'; hInput.min='0'; hInput.placeholder='h';
+      const mInput=document.createElement('input'); mInput.type='number'; mInput.min='0'; mInput.placeholder='min';
+
+      const startBtn=document.createElement('button'); startBtn.textContent='Démarrer';
+      const stopBtn=document.createElement('button'); stopBtn.textContent='Pause'; stopBtn.className='ghost';
+      const resetBtn=document.createElement('button'); resetBtn.textContent='Reset'; resetBtn.className='ghost';
+
+      const status=document.createElement('div'); status.style.marginTop='6px'; status.innerHTML='<small>État: <span class="st">stopped</span></small>';
+
+      controls.append(hInput,mInput,startBtn,stopBtn,resetBtn);
+      root.append(title,timeEl,controls,status);
+      container.appendChild(root);
+
+      let saved={durationSeconds:0,endTimestamp:null,status:'stopped'};
+      try{
+        const raw=localStorage.getItem(storageKey(id));
+        if(raw) saved=Object.assign(saved,JSON.parse(raw));
+      }catch(e){}
+
+      function persist(){ try{localStorage.setItem(storageKey(id),JSON.stringify(saved));}catch(e){} }
+
+      function updateUI(){
+        const now=Date.now();
+        let remaining=0;
+        if(saved.endTimestamp) remaining=Math.ceil((saved.endTimestamp-now)/1000);
+        else remaining=saved.durationSeconds;
+        if(remaining<=0 && saved.endTimestamp){
+          saved.status='finished'; saved.endTimestamp=null; saved.durationSeconds=0; persist();
+        }
+        timeEl.textContent=saved.status==='running'?formatHMS(remaining):formatHMS(saved.durationSeconds);
+        root.querySelector('.st').textContent=saved.status;
+        stopBtn.disabled=(saved.status!=='running');
+        startBtn.disabled=(saved.status==='running');
+      }
+
+      startBtn.addEventListener('click',()=>{
+        if(saved.status==='running') return;
+        const hours=Math.max(0,parseInt(hInput.value)||0);
+        const mins=Math.max(0,parseInt(mInput.value)||0);
+        saved.durationSeconds=hours*3600+mins*60;
+        if(saved.durationSeconds<=0) return;
+        saved.endTimestamp=Date.now()+saved.durationSeconds*1000;
+        saved.status='running'; persist(); updateUI();
+      });
+
+      stopBtn.addEventListener('click',()=>{
+        if(saved.status!=='running') return;
+        const rem=Math.max(0,Math.ceil((saved.endTimestamp-Date.now())/1000));
+        saved.durationSeconds=rem; saved.endTimestamp=null; saved.status='stopped'; persist(); updateUI();
+      });
+
+      resetBtn.addEventListener('click',()=>{
+        saved.durationSeconds=0; saved.endTimestamp=null; saved.status='stopped'; persist(); updateUI();
+      });
+
+      setInterval(updateUI,1000);
+      updateUI();
+      window.addEventListener('storage',(ev)=>{
+        if(ev.key===storageKey(id)){ try{saved=Object.assign(saved,JSON.parse(ev.newValue)); updateUI();}catch(e){} }
+      });
+    }
+
+    const grid=document.getElementById('grid');
+    createMachine(1,'Machine à laver 1',grid);
+    createMachine(2,'Machine à laver 2',grid);
+    createMachine(3,'Machine à laver 3',grid);
+    createMachine(4,'Seche linge 1',grid);
+    createMachine(5,'Seche linge 2',grid);
+    createMachine(6,'Seche linge 3',grid);
+  </script>
+</body>
+</html>
